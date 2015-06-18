@@ -43,7 +43,7 @@ func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
     	return nil, error(UnknownFileType{})
     }
     
-    extHandler := ExternalHandler(Filter{handler})
+    extHandler := ExternalHandler(Filter{handler, mimeType})
     return extHandler, nil
 }
 
@@ -69,11 +69,17 @@ type ExternalHandler interface {
 	// Informational - return the commands this interface will run as strings
 	CommandCompress() string
 	CommandDecompress() string
+	MimeType() string
 }
 
 // Handles the unix-style filter commands
 type Filter struct {
 	Command string
+	mimeType string
+}
+
+func (c Filter) MimeType() string {
+	return c.mimeType
 }
 
 func (c Filter) CommandCompress() string {
@@ -88,7 +94,7 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.Command,filePath)
+	cmd := exec.Command(c.Command,"-c",filePath)
 	err := cmd.Start()
 	if err != nil {
 		log.WithFields(logFields).Error("Compression command failed.")
@@ -162,17 +168,12 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 
 // Decompress the given file and return the stream
 func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
-	cmd := exec.Command(c.Command, "-d", filePath)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Errorf("External decompression command error: %s", err.Error())
-		return nil, err
-	}
+	cmd := exec.Command(c.Command, "-d","-c", filePath)
 	
 	if err := cmd.Start(); err != nil {
 		log.Errorf("External decompression command error:", err.Error())
 		return nil, err
 	}
 	
-	return stdout, nil
+	return cmd.StdoutPipe()
 }
