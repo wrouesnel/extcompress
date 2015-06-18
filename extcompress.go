@@ -95,6 +95,13 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 	log.WithFields(logFields).Info("External Compression Command")
 	
 	cmd := exec.Command(c.Command,"-c",filePath)
+	
+	rdr, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Errorf("Failed to get stdout pipe.")
+		return nil, err
+	}
+	
 	err := cmd.Start()
 	if err != nil {
 		log.WithFields(logFields).Error("Compression command failed.")
@@ -102,7 +109,7 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 	}
 	
 	log.Debug("External compression finished successfully.")
-	return cmd.StdoutPipe()
+	return rdr, err
 }
 
 func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
@@ -111,6 +118,13 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	
 	cmd := exec.Command(c.Command,"-c")
 	cmd.Stdin = rd
+	
+	rdr, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Errorf("Failed to get stdout pipe.")
+		return nil, err
+	}
+	
 	err := cmd.Start()
 	if err != nil {
 		log.WithFields(logFields).Error("Compression command failed.")
@@ -118,7 +132,7 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	}
 	
 	log.Debug("External compression finished successfully.")
-	return cmd.StdoutPipe()
+	return rdr, err
 }
 
 // Call the compression utility in standalone compression mode
@@ -142,6 +156,13 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	
 	cmd := exec.Command(c.Command,"-d","-c")
 	cmd.Stdin = rd
+	
+	rdr, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Errorf("Failed to get stdout pipe.")
+		return nil, err
+	}
+	
 	err := cmd.Start()
 	if err != nil {
 		log.WithFields(logFields).Error("Compression command failed.")
@@ -149,7 +170,7 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	}
 	
 	log.Debug("External compression finished successfully.")
-	return cmd.StdoutPipe()
+	return rdr
 }
 
 func (c Filter) DecompressFileInPlace(filePath string) error {	
@@ -169,11 +190,16 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 // Decompress the given file and return the stream
 func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
 	cmd := exec.Command(c.Command, "-d","-c", filePath)
+	rdr, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Errorf("Failed to get stdout pipe.")
+		return nil, err
+	}
 	
 	if err := cmd.Start(); err != nil {
 		log.Errorf("External decompression command error:", err.Error())
 		return nil, err
 	}
 	
-	return cmd.StdoutPipe()
+	return rdr, err
 }
