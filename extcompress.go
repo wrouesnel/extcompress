@@ -102,7 +102,7 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	err := cmd.Start()
+	err = cmd.Start()
 	if err != nil {
 		log.WithFields(logFields).Error("Compression command failed.")
 		return nil, err
@@ -125,7 +125,7 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	err := cmd.Start()
+	err = cmd.Start()
 	if err != nil {
 		log.WithFields(logFields).Error("Compression command failed.")
 		return nil, err
@@ -163,14 +163,14 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	err := cmd.Start()
+	err = cmd.Start()
 	if err != nil {
 		log.WithFields(logFields).Error("Compression command failed.")
 		return nil, err
 	}
 	
 	log.Debug("External compression finished successfully.")
-	return rdr
+	return rdr, err
 }
 
 func (c Filter) DecompressFileInPlace(filePath string) error {	
