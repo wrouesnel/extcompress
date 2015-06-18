@@ -34,7 +34,11 @@ func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
         return nil, err
     }
     
-    handler, ok := filtersMap[mimetype]
+    return GetExternalHandlerFromMimeType(mimetype)
+}
+
+func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
+	handler, ok := filtersMap[mimeType]
     if !ok {
     	return nil, error(UnknownFileType{})
     }
@@ -61,18 +65,30 @@ type ExternalHandler interface {
 	// In place compression/decompression
 	CompressFileInPlace(filePath string) error
 	DecompressFileInPlace(filePath string) error
+	
+	// Informational - return the commands this interface will run as strings
+	CommandCompress() string
+	CommandDecompress() string
 }
 
 // Handles the unix-style filter commands
 type Filter struct {
-	command string
+	Command string
+}
+
+func (c Filter) CommandCompress() string {
+	return c.Command + " -c"
+}
+
+func (c Filter) CommandDecompress() string {
+	return c.Command + "-d -c"
 }
 
 func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
-	var logFields = log.Fields{"compressCmd" : c.command, "filepath" : filePath }
+	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.command,filePath)
+	cmd := exec.Command(c.Command,filePath)
 	err := cmd.Start()
 	if err != nil {
 		log.WithFields(logFields).Error("Compression command failed.")
@@ -84,10 +100,10 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 }
 
 func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
-	var logFields = log.Fields{"compressCmd" : c.command }
+	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.command,"-c")
+	cmd := exec.Command(c.Command,"-c")
 	cmd.Stdin = rd
 	err := cmd.Start()
 	if err != nil {
@@ -101,10 +117,10 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 
 // Call the compression utility in standalone compression mode
 func (c Filter) CompressFileInPlace(filePath string) error {	
-	var logFields = log.Fields{"compressCmd" : c.command, "filepath" : filePath }
+	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.command,filePath)
+	cmd := exec.Command(c.Command,filePath)
 	err := cmd.Run()
 	if err != nil {
 		log.WithFields(logFields).Warn("Compression command failed.")
@@ -115,10 +131,10 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 }
 
 func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
-	var logFields = log.Fields{"compressCmd" : c.command }
+	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.command,"-d","-c")
+	cmd := exec.Command(c.Command,"-d","-c")
 	cmd.Stdin = rd
 	err := cmd.Start()
 	if err != nil {
@@ -131,10 +147,10 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 }
 
 func (c Filter) DecompressFileInPlace(filePath string) error {	
-	var logFields = log.Fields{"compressCmd" : c.command, "filepath" : filePath }
+	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Decompression Command")
 	
-	cmd := exec.Command(c.command, "-d", filePath)
+	cmd := exec.Command(c.Command, "-d", filePath)
 	err := cmd.Run()
 	if err != nil {
 		log.WithFields(logFields).Warn("DeCompression command failed.")
@@ -146,7 +162,7 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 
 // Decompress the given file and return the stream
 func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
-	cmd := exec.Command(c.command, "-d", filePath)
+	cmd := exec.Command(c.Command, "-d", filePath)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Errorf("External decompression command error: %s", err.Error())
