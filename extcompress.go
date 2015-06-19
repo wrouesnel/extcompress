@@ -82,6 +82,7 @@ func (c Filter) MimeType() string {
 	return c.mimeType
 }
 
+// FIXME: Eek. There has got to be a better way to do this!
 func (c Filter) CommandCompress() string {
 	return c.Command + " -c"
 }
@@ -108,7 +109,14 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	log.Debug("External compression finished successfully.")
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Error("External compression command exited non-zero.")
+		} else {
+			log.Debug("External compression finished successfully.")
+		} 
+	}()
+	
 	return rdr, err
 }
 
@@ -131,7 +139,14 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	log.Debug("External compression finished successfully.")
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Error("External compression command exited non-zero.")
+		} else {
+			log.Debug("External compression finished successfully.")
+		} 
+	}()
+	
 	return rdr, err
 }
 
@@ -146,7 +161,14 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 		log.WithFields(logFields).Warn("Compression command failed.")
 	}
 	
-	log.Debug("External compression finished successfully.")
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Error("External compression command exited non-zero.")
+		} else {
+			log.Debug("External compression finished successfully.")
+		} 
+	}()
+	
 	return err
 }
 
@@ -169,7 +191,14 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	log.Debug("External compression finished successfully.")
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Error("External compression command exited non-zero.")
+		} else {
+			log.Debug("External compression finished successfully.")
+		} 
+	}()
+	
 	return rdr, err
 }
 
@@ -183,7 +212,14 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 		log.WithFields(logFields).Warn("DeCompression command failed.")
 	}
 	
-	log.Debug("External compression finished successfully.")
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Error("External compression command exited non-zero.")
+		} else {
+			log.Debug("External compression finished successfully.")
+		} 
+	}()
+	
 	return err
 }
 
@@ -200,6 +236,14 @@ func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
 		log.Errorf("External decompression command error:", err.Error())
 		return nil, err
 	}
+	
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Error("External compression command exited non-zero.")
+		} else {
+			log.Debug("External compression finished successfully.")
+		} 
+	}()
 	
 	return rdr, err
 }
