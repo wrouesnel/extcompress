@@ -87,7 +87,7 @@ func (c Filter) CommandCompress() string {
 }
 
 func (c Filter) CommandDecompress() string {
-	return c.Command + "-d -c"
+	return c.Command + " -d -c"
 }
 
 func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
