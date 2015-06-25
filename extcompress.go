@@ -172,14 +172,6 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 		log.WithFields(logFields).Warn("Compression command failed.")
 	}
 	
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
-		} else {
-			log.Debug("External compression finished successfully.")
-		} 
-	}()
-	
 	return err
 }
 
@@ -222,14 +214,6 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 	if err != nil {
 		log.WithFields(logFields).Warn("DeCompression command failed.")
 	}
-	
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
-		} else {
-			log.Debug("External compression finished successfully.")
-		} 
-	}()
 	
 	return err
 }
