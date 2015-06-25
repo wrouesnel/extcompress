@@ -15,10 +15,21 @@ import (
 
 // Map of stream compressors
 var filtersMap map[string]string = map[string]string{
-	"application/x-bzip2" : "bzip2",
+	"application/x-bzip2" : "pbzip2",
 	"application/gzip" : "gzip",
 	"application/x-xz" : "xz",
 	"text/plain" : "cat",
+}
+
+// Check that all handlers are properly register, fail hard if they're not.
+func CheckHandlers() {
+	for k, v := range filtersMap {
+		hlog := log.WithField("mimetype", k).WithField("handler", v)
+		_, err := exec.LookPath(v)
+		if err != nil {
+			hlog.Fatal("Handler unavailable!")
+		}
+	}
 }
 
 // Do a filemagic lookup and return a handler interface for the given type
