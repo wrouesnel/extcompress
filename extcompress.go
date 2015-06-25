@@ -122,7 +122,7 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 	
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Error("External compression command exited non-zero.")
+			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 		} else {
 			log.Debug("External compression finished successfully.")
 		} 
@@ -152,7 +152,7 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Error("External compression command exited non-zero.")
+			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 		} else {
 			log.Debug("External compression finished successfully.")
 		} 
@@ -174,7 +174,7 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 	
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Error("External compression command exited non-zero.")
+			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 		} else {
 			log.Debug("External compression finished successfully.")
 		} 
@@ -204,7 +204,7 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Error("External compression command exited non-zero.")
+			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 		} else {
 			log.Debug("External compression finished successfully.")
 		} 
@@ -225,7 +225,7 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 	
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Error("External compression command exited non-zero.")
+			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 		} else {
 			log.Debug("External compression finished successfully.")
 		} 
@@ -250,7 +250,7 @@ func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
 	
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Error("External compression command exited non-zero.")
+			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 		} else {
 			log.Debug("External compression finished successfully.")
 		} 
