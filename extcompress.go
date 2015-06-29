@@ -1,6 +1,9 @@
 /*
 	package which provides a set of helpers to wrap external compression
 	commands behind writer/reader interfaces.
+	
+	This whole library would benefit from a decent shlex-er type interface to
+	make specifying the filters less verbose.
 */
 
 package extcompress
@@ -8,25 +11,113 @@ package extcompress
 import (
 	"os/exec"
 	"io"
+	"strings"
 	"github.com/rakyll/magicmime"
 	
 	log "github.com/Sirupsen/logrus"
 )
 
-// Map of stream compressors
-var filtersMap map[string]string = map[string]string{
-	"application/x-bzip2" : "pbzip2",
-	"application/gzip" : "gzip",
-	"application/x-xz" : "xz",
-	"text/plain" : "cat",
-	"application/x-empty" : "cat",
+// Interface of an external handler type for dealing with library compression
+type ExternalHandler interface {
+	// Stream compression/decompression from file
+	Compress(filePath string) (io.ReadCloser, error)
+	Decompress(filePath string) (io.ReadCloser, error)
+	
+	// Pure stream handlers
+	CompressStream(io.ReadCloser) (io.ReadCloser, error)
+	DecompressStream(io.ReadCloser) (io.ReadCloser, error)
+	
+	// In place compression/decompression
+	CompressFileInPlace(filePath string) error
+	DecompressFileInPlace(filePath string) error
+	
+	// Informational - return the commands this interface will run as strings
+	CommandStreamCompress() string
+	CommandStreamDecompress() string
+	MimeType() string
 }
 
-// Check that all handlers are properly register, fail hard if they're not.
+// Handles most unix-style filter commands and implements the externalhandler
+// interface. The filename, where necessary, is appended to the flags.
+type Filter struct {
+	Command string
+	
+	CompressFlags []string
+	DecompressFlags []string
+	
+	CompressStreamFlags []string
+	DecompressStreamFlags []string
+	
+	CompressInPlaceFlags []string
+	DecompressInPlaceFlags []string
+	
+	mimeType string
+}
+
+// Map of stream compressors
+var filtersMap map[string]Filter = map[string]Filter{
+	"application/x-bzip2" : Filter{ 
+		Command: "bzip2",
+		CompressFlags: []string{},
+		DecompressFlags: []string{"-d"},
+	
+		CompressStreamFlags: []string{"-c"},
+		DecompressStreamFlags: []string{"-d", "-c"},
+		
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{"-d"},
+	},
+	"application/gzip" : Filter{ 
+		Command: "gzip",
+		CompressFlags: []string{},
+		DecompressFlags: []string{"-d"},
+	
+		CompressStreamFlags: []string{"-c"},
+		DecompressStreamFlags: []string{"-d", "-c"},
+		
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{"-d"},
+	},
+	"application/x-xz" : Filter{ 
+		Command: "xz",
+		CompressFlags: []string{},
+		DecompressFlags: []string{"-d"},
+	
+		CompressStreamFlags: []string{"-c"},
+		DecompressStreamFlags: []string{"-d", "-c"},
+		
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{"-d"},
+	},
+	"text/plain" : Filter{ 
+		Command: "cat",
+		CompressFlags: []string{},
+		DecompressFlags: []string{},
+	
+		CompressStreamFlags: []string{},
+		DecompressStreamFlags: []string{},
+		
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{},
+	},
+	"application/x-empty" : Filter{ 
+		Command: "cat",
+		CompressFlags: []string{},
+		DecompressFlags: []string{},
+	
+		CompressStreamFlags: []string{},
+		DecompressStreamFlags: []string{},
+		
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{},
+	},
+}
+
+// Check that all handlers are properly registered, fail hard if they're not.
 func CheckHandlers() {
 	for k, v := range filtersMap {
 		hlog := log.WithField("mimetype", k).WithField("handler", v)
-		_, err := exec.LookPath(v)
+		_, err := exec.LookPath(v.Command)
 		if err != nil {
 			hlog.Fatal("Handler unavailable!")
 		}
@@ -55,7 +146,8 @@ func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
     	return nil, error(UnknownFileType{})
     }
     
-    extHandler := ExternalHandler(Filter{handler, mimeType})
+    handler.mimeType = mimeType
+    extHandler := ExternalHandler(handler)
     return extHandler, nil
 }
 
@@ -64,50 +156,23 @@ func (r UnknownFileType) Error() string {
 	return "This file type is not known to us."
 }
 
-// Interface of an external handler type for dealing with library compression
-type ExternalHandler interface {
-	// Stream compression/decompression from file
-	Compress(filePath string) (io.ReadCloser, error)
-	Decompress(filePath string) (io.ReadCloser, error)
-	
-	// Pure stream handlers
-	CompressStream(io.ReadCloser) (io.ReadCloser, error)
-	DecompressStream(io.ReadCloser) (io.ReadCloser, error)
-	
-	// In place compression/decompression
-	CompressFileInPlace(filePath string) error
-	DecompressFileInPlace(filePath string) error
-	
-	// Informational - return the commands this interface will run as strings
-	CommandCompress() string
-	CommandDecompress() string
-	MimeType() string
-}
-
-// Handles the unix-style filter commands
-type Filter struct {
-	Command string
-	mimeType string
-}
-
 func (c Filter) MimeType() string {
 	return c.mimeType
 }
 
-// FIXME: Eek. There has got to be a better way to do this!
-func (c Filter) CommandCompress() string {
-	return c.Command + " -c"
+func (c Filter) CommandStreamCompress() string {
+	return strings.Join(append([]string{c.Command}, c.CompressStreamFlags...), " ")
 }
 
-func (c Filter) CommandDecompress() string {
-	return c.Command + " -d -c"
+func (c Filter) CommandStreamDecompress() string {
+	return strings.Join(append([]string{c.Command}, c.DecompressStreamFlags...), " ")
 }
 
 func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.Command,"-c",filePath)
+	cmd := exec.Command(c.Command, append(c.CompressFlags, filePath)...)
 	
 	rdr, err := cmd.StdoutPipe()
 	if err != nil {
@@ -136,7 +201,7 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.Command,"-c")
+	cmd := exec.Command(c.Command,c.CompressStreamFlags...)
 	cmd.Stdin = rd
 	
 	rdr, err := cmd.StdoutPipe()
@@ -167,7 +232,7 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.Command,filePath)
+	cmd := exec.Command(c.Command, append(c.CompressInPlaceFlags, filePath)...)
 	err := cmd.Run()
 	if err != nil {
 		log.WithFields(logFields).Warn("Compression command failed.")
@@ -180,7 +245,7 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
-	cmd := exec.Command(c.Command,"-d","-c")
+	cmd := exec.Command(c.Command,c.DecompressStreamFlags...)
 	cmd.Stdin = rd
 	
 	rdr, err := cmd.StdoutPipe()
@@ -210,7 +275,7 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Decompression Command")
 	
-	cmd := exec.Command(c.Command, "-d", filePath)
+	cmd := exec.Command(c.Command, append(c.DecompressInPlaceFlags, filePath)...)
 	err := cmd.Run()
 	if err != nil {
 		log.WithFields(logFields).Warn("DeCompression command failed.")
@@ -221,7 +286,7 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 
 // Decompress the given file and return the stream
 func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
-	cmd := exec.Command(c.Command, "-d","-c", filePath)
+	cmd := exec.Command(c.Command, append(c.DecompressFlags, filePath)...)
 	rdr, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Errorf("Failed to get stdout pipe.")
