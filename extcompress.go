@@ -19,6 +19,7 @@ var filtersMap map[string]string = map[string]string{
 	"application/gzip" : "gzip",
 	"application/x-xz" : "xz",
 	"text/plain" : "cat",
+	"application/x-empty" : "cat",
 }
 
 // Check that all handlers are properly register, fail hard if they're not.
