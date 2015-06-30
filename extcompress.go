@@ -54,6 +54,32 @@ type Filter struct {
 	mimeType string
 }
 
+// Implements the ReadCloser interface to allow safely shutting down remotely
+// invoked Command pipes.
+type ReadWaitCloser struct {
+	cmd *exec.Cmd
+	pipe io.ReadCloser
+}
+
+func (rwc ReadWaitCloser) Read(p []byte) (n int, err error) {
+	return rwc.pipe.Read(p)
+}
+
+func (rwc ReadWaitCloser) Close() error {
+	perr := rwc.pipe.Close()
+	if perr != nil {
+		log.WithField("error", perr.Error()).Error("Error closing external compressor pipe")		
+	}
+
+	if err := rwc.cmd.Wait(); err != nil {
+		log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
+	} else {
+		log.Debug("External compression finished successfully.")
+	} 
+	
+	return perr
+}
+
 // Map of stream compressors
 var filtersMap map[string]Filter = map[string]Filter{
 	"application/x-bzip2" : Filter{ 
@@ -199,15 +225,7 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
-		} else {
-			log.WithField("filepath", filePath).Debug("External compression finished successfully.")
-		} 
-	}()
-	
-	return rdr, err
+	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
 }
 
 func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
@@ -229,15 +247,7 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
-		} else {
-			log.Debug("External compression finished successfully.")
-		} 
-	}()
-	
-	return rdr, err
+	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
 }
 
 // Call the compression utility in standalone compression mode
@@ -273,15 +283,7 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
-		} else {
-			log.Debug("External compression finished successfully.")
-		} 
-	}()
-	
-	return rdr, err
+	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
 }
 
 func (c Filter) DecompressFileInPlace(filePath string) error {	
@@ -311,13 +313,5 @@ func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
-		} else {
-			log.WithField("filepath", filePath).Debug("External compression finished successfully.")
-		} 
-	}()
-	
-	return rdr, err
+	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
 }
