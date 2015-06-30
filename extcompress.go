@@ -9,6 +9,7 @@
 package extcompress
 
 import (
+	"syscall"
 	"os/exec"
 	"io"
 	"strings"
@@ -66,18 +67,19 @@ func (rwc ReadWaitCloser) Read(p []byte) (n int, err error) {
 }
 
 func (rwc ReadWaitCloser) Close() error {
-	perr := rwc.pipe.Close()
-	if perr != nil {
-		log.WithField("error", perr.Error()).Error("Error closing external compressor pipe")		
+	// Close requested, so ask the process to die, then close it's pipe.
+	err := rwc.cmd.Process.Signal(syscall.SIGTERM)
+	if err != nil {
+		log.WithField("error", err.Error()).Error("Error sending signal to external process")
 	}
-
-	if err := rwc.cmd.Wait(); err != nil {
+	
+	if err = rwc.cmd.Wait(); err != nil {
 		log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 	} else {
 		log.Debug("External compression finished successfully.")
 	} 
-	
-	return perr
+
+	return err
 }
 
 // Map of stream compressors
