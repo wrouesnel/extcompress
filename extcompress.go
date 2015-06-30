@@ -58,8 +58,8 @@ type Filter struct {
 var filtersMap map[string]Filter = map[string]Filter{
 	"application/x-bzip2" : Filter{ 
 		Command: "bzip2",
-		CompressFlags: []string{},
-		DecompressFlags: []string{"-d"},
+		CompressFlags: []string{"-c"},
+		DecompressFlags: []string{"-d", "-c"},
 	
 		CompressStreamFlags: []string{"-c"},
 		DecompressStreamFlags: []string{"-d", "-c"},
@@ -69,8 +69,8 @@ var filtersMap map[string]Filter = map[string]Filter{
 	},
 	"application/gzip" : Filter{ 
 		Command: "gzip",
-		CompressFlags: []string{},
-		DecompressFlags: []string{"-d"},
+		CompressFlags: []string{"-c"},
+		DecompressFlags: []string{"-d", "-c"},
 	
 		CompressStreamFlags: []string{"-c"},
 		DecompressStreamFlags: []string{"-d", "-c"},
@@ -80,8 +80,8 @@ var filtersMap map[string]Filter = map[string]Filter{
 	},
 	"application/x-xz" : Filter{ 
 		Command: "xz",
-		CompressFlags: []string{},
-		DecompressFlags: []string{"-d"},
+		CompressFlags: []string{"-c"},
+		DecompressFlags: []string{"-d", "-c"},
 	
 		CompressStreamFlags: []string{"-c"},
 		DecompressStreamFlags: []string{"-d", "-c"},
@@ -101,6 +101,17 @@ var filtersMap map[string]Filter = map[string]Filter{
 		DecompressInPlaceFlags: []string{},
 	},
 	"application/x-empty" : Filter{ 
+		Command: "cat",
+		CompressFlags: []string{},
+		DecompressFlags: []string{},
+	
+		CompressStreamFlags: []string{},
+		DecompressStreamFlags: []string{},
+		
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{},
+	},
+	"inode/x-empty" : Filter{ 
 		Command: "cat",
 		CompressFlags: []string{},
 		DecompressFlags: []string{},
@@ -143,7 +154,7 @@ func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
 func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
 	handler, ok := filtersMap[mimeType]
     if !ok {
-    	return nil, error(UnknownFileType{})
+    	return nil, error(UnknownFileType{"mimeType"})
     }
     
     handler.mimeType = mimeType
@@ -151,7 +162,9 @@ func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
     return extHandler, nil
 }
 
-type UnknownFileType struct {}
+type UnknownFileType struct {
+	MimeType string	
+}
 func (r UnknownFileType) Error() string {
 	return "This file type is not known to us."
 }
@@ -190,7 +203,7 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 		if err := cmd.Wait(); err != nil {
 			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 		} else {
-			log.Debug("External compression finished successfully.")
+			log.WithField("filepath", filePath).Debug("External compression finished successfully.")
 		} 
 	}()
 	
@@ -302,7 +315,7 @@ func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
 		if err := cmd.Wait(); err != nil {
 			log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 		} else {
-			log.Debug("External compression finished successfully.")
+			log.WithField("filepath", filePath).Debug("External compression finished successfully.")
 		} 
 	}()
 	
