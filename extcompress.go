@@ -72,13 +72,14 @@ func (rwc ReadWaitCloser) Close() error {
 	if err != nil {
 		log.WithField("error", err.Error()).Error("Error sending signal to external process")
 	}
-	
+
 	if err = rwc.cmd.Wait(); err != nil {
 		log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
 	} else {
 		log.Debug("External compression finished successfully.")
 	} 
-
+	
+	err = rwc.pipe.Close()
 	return err
 }
 
@@ -175,6 +176,8 @@ func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
     if err != nil {
         return nil, err
     }
+    
+    mm.Close()
     
     return GetExternalHandlerFromMimeType(mimetype)
 }
@@ -303,6 +306,9 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 
 // Decompress the given file and return the stream
 func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
+	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
+	log.WithFields(logFields).Info("External Decompression Command")
+	
 	cmd := exec.Command(c.Command, append(c.DecompressFlags, filePath)...)
 	rdr, err := cmd.StdoutPipe()
 	if err != nil {
