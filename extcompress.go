@@ -118,7 +118,7 @@ var filtersMap map[string]Filter = map[string]Filter{
 		CompressInPlaceFlags: []string{},
 		DecompressInPlaceFlags: []string{"-d"},
 	},
-	"text/plain" : Filter{ 
+	"text" : Filter{ 
 		Command: "cat",
 		CompressFlags: []string{},
 		DecompressFlags: []string{},
@@ -185,7 +185,12 @@ func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
 func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
 	handler, ok := filtersMap[mimeType]
     if !ok {
-    	return nil, error(UnknownFileType{"mimeType"})
+    	// Try splitting on the / and looking for a bulk handler
+    	firstpart := strings.Split(mimeType, "/")[0]
+    	handler, ok = filtersMap[firstpart]
+    	if !ok {
+    		return nil, error(UnknownFileType{"mimeType"})
+    	}
     }
     
     handler.mimeType = mimeType
