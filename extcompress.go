@@ -25,8 +25,8 @@ type ExternalHandler interface {
 	Decompress(filePath string) (io.ReadCloser, error)
 	
 	// Pure stream handlers
-	CompressStream(io.ReadCloser) (io.ReadCloser, error)
-	DecompressStream(io.ReadCloser) (io.ReadCloser, error)
+	CompressStream(io.Reader) (io.ReadCloser, error)
+	DecompressStream(io.Reader) (io.ReadCloser, error)
 	
 	// In place compression/decompression
 	CompressFileInPlace(filePath string) error
@@ -238,7 +238,7 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
 }
 
-func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
+func (c Filter) CompressStream(rd io.Reader) (io.ReadCloser, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
@@ -274,7 +274,7 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 	return err
 }
 
-func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
+func (c Filter) DecompressStream(rd io.Reader) (io.ReadCloser, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
