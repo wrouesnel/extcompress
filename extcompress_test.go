@@ -40,3 +40,22 @@ func TestPipeChaining(t *testing.T) {
 	os.RemoveAll(tmpdir)
 }
 
+func TestFailedCopy(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "brokenpipe_test")
+	assert.Nil(t, err)
+
+	start := path.Join(tmpdir, "brokenpipe")
+	ioutil.WriteFile(start, []byte(data), os.FileMode(777))
+
+	h, err := GetExternalHandlerFromMimeType("text/plain")
+	assert.Nil(t, err)
+
+	fh, err := ioutil.TempFile(tmpdir, "outfile")
+	assert.Nil(t, err)
+
+	fh.WriteString("qdejoiqedjqeoidjewfhwiufhwrifundwcijnerfiuvhwdfcjwncdiweuc")
+	fh.Seek(0, os.SEEK_SET)
+
+	mr, err := h.CompressStream(fh)
+	assert.Nil(t, err)
+}

@@ -222,7 +222,8 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 	log.WithFields(logFields).Info("External Compression Command")
 	
 	cmd := exec.Command(c.Command, append(c.CompressFlags, filePath)...)
-	
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
+
 	rdr, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Errorf("Failed to get stdout pipe.")
@@ -243,6 +244,8 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	log.WithFields(logFields).Info("External Compression Command")
 	
 	cmd := exec.Command(c.Command,c.CompressStreamFlags...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
+
 	cmd.Stdin = rd
 	
 	rdr, err := cmd.StdoutPipe()
@@ -266,6 +269,7 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 	log.WithFields(logFields).Info("External Compression Command")
 	
 	cmd := exec.Command(c.Command, append(c.CompressInPlaceFlags, filePath)...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 	err := cmd.Run()
 	if err != nil {
 		log.WithFields(logFields).Warn("Compression command failed.")
@@ -279,6 +283,7 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 	log.WithFields(logFields).Info("External Compression Command")
 	
 	cmd := exec.Command(c.Command,c.DecompressStreamFlags...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 	cmd.Stdin = rd
 	
 	rdr, err := cmd.StdoutPipe()
@@ -301,6 +306,7 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 	log.WithFields(logFields).Info("External Decompression Command")
 	
 	cmd := exec.Command(c.Command, append(c.DecompressInPlaceFlags, filePath)...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 	err := cmd.Run()
 	if err != nil {
 		log.WithFields(logFields).Warn("DeCompression command failed.")
@@ -315,6 +321,7 @@ func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
 	log.WithFields(logFields).Info("External Decompression Command")
 	
 	cmd := exec.Command(c.Command, append(c.DecompressFlags, filePath)...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 	rdr, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Errorf("Failed to get stdout pipe.")
