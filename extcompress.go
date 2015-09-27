@@ -73,8 +73,11 @@ func (rwc ReadWaitCloser) Close() error {
 		log.WithField("error", err.Error()).Error("Error sending signal to external process")
 	}
 
-	if err = rwc.cmd.Wait(); err != nil {
+	err = rwc.cmd.Wait()
+	if err != nil {
 		log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
+		rwc.pipe.Close()
+		return err
 	} else {
 		log.Debug("External compression finished successfully.")
 	} 
