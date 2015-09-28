@@ -169,7 +169,7 @@ func CheckHandlers() {
 
 // Do a filemagic lookup and return a handler interface for the given type
 func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
-	mm, err := magicmime.New(magicmime.MAGIC_MIME_TYPE | 
+	mm, err := magicmime.Open(magicmime.MAGIC_MIME_TYPE |
 		magicmime.MAGIC_SYMLINK | magicmime.MAGIC_ERROR)
     if err != nil {
         return nil, err
