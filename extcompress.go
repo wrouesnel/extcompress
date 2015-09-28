@@ -174,13 +174,12 @@ func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
     if err != nil {
         return nil, err
     }
+	defer magicmime.Close()
 
     mimetype, err := magicmime.TypeByFile(filePath)
     if err != nil {
         return nil, err
     }
-
-	magicmime.Close()
     
     return GetExternalHandlerFromMimeType(mimetype)
 }
