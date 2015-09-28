@@ -14,9 +14,12 @@ import (
 	"io"
 	"strings"
 	"github.com/rakyll/magicmime"
+	"sync"
 	
 	log "github.com/Sirupsen/logrus"
 )
+
+var gmtx sync.Mutex
 
 // Interface of an external handler type for dealing with library compression
 type ExternalHandler interface {
@@ -169,6 +172,10 @@ func CheckHandlers() {
 
 // Do a filemagic lookup and return a handler interface for the given type
 func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
+    // libmagic is not thread safe!
+    gmtx.Lock()
+    defer gmtx.Unlock()
+
 	err:= magicmime.Open(magicmime.MAGIC_MIME_TYPE |
 		magicmime.MAGIC_SYMLINK | magicmime.MAGIC_ERROR)
     if err != nil {
