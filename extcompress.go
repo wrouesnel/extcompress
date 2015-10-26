@@ -110,6 +110,8 @@ type CompressionJob struct {
 	pipe io.ReadCloser
 	result int
 
+	termFlag bool	// True if we deliberately killed this job via Close()
+
 	// Used to make Result
 	wg sync.WaitGroup
 }
@@ -131,47 +133,49 @@ func (rwc CompressionJob) Read(p []byte) (n int, err error) {
 func (this *CompressionJob) Close() error {
 	// If process not existed, request kill
 	if this.cmd.ProcessState != nil {
-		// Close requested, so ask the process to die, then close it's pipe.
-		err := this.cmd.Process.Signal(syscall.SIGINT)
-		if err != nil {
-			log.WithField("error", err.Error()).Error("Error sending signal to external process")
-		}
+		// Close requested, so kill the process, then close it's pipe.
+//		err := this.cmd.Process.Signal(syscall.SIGINT)
+//		if err != nil {
+//			log.WithField("error", err.Error()).Error("Error sending signal to external process")
+//		}
 
 //		// If the int isn't respected after a few seconds, do a term.
 //		t := time.NewTimer(time.Second * 3)
 //		<- t.C
 //
-//		if !this.cmd.ProcessState.Exited() {
-//			log.Warn("Compression command didn't die after 3 seconds. Terminating...")
-//			err := this.cmd.Process.Signal(syscall.SIGTERM)
-//			if err != nil {
-//				log.WithField("error", err.Error()).Error("Error sending signal to external process")
-//			}
-//		}
+		log.Debug("Terminating still active compression command")
+		err := this.cmd.Process.Signal(syscall.SIGTERM)
+		if err != nil {
+			log.WithField("error", err.Error()).Error("Error sending signal to external process")
+		}
+		this.termFlag = true
 	}
-
+	this.pipe.Close()
 	return this.getResult()
 }
 
 func (this *CompressionJob) getResult() error {
 	if err := this.cmd.Wait(); err != nil {
-		if exiterr, ok := err.(*exec.ExitError); ok {
-			// The program has exited with an exit code != 0
+		// Result is forced to 0 (success) if we forcibly closed the pipe.
+		if !this.termFlag {
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				// The program has exited with an exit code != 0
 
-			// This works on both Unix and Windows. Although package
-			// syscall is generally platform dependent, WaitStatus is
-			// defined for both Unix and Windows and in both cases has
-			// an ExitStatus() method with the same signature.
-			if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-				this.result = status.ExitStatus()
+				// This works on both Unix and Windows. Although package
+				// syscall is generally platform dependent, WaitStatus is
+				// defined for both Unix and Windows and in both cases has
+				// an ExitStatus() method with the same signature.
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					this.result = status.ExitStatus()
+				}
+			} else {
+				log.Fatalf("cmd.Wait: %v", err)
 			}
-		} else {
-			log.Fatalf("cmd.Wait: %v", err)
 		}
 	}
-	err := this.pipe.Close()
+
 	this.wg.Done()	// Clear the waiting for results
-	return err
+	return nil
 }
 
 // Returns the exit status of the compression command. Blocks until the compression
