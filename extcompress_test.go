@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 	"path/filepath"
-	"github.com/prometheus/prometheus/vendor/github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 )
 
 const data = `
@@ -70,13 +70,8 @@ func TestMimeHandlerMappings(t *testing.T) {
 	// Helper to check mimetype logic
 	mimeCheck := func (hSource ExternalHandler, hResult ExternalHandler) {
 		// empty handling actually results in text
-		if hSource.MimeType() == "inode/x-empty" || hSource.MimeType() == "application/x-empty" {
-			assert.Equal(t, "text/plain", hResult.MimeType())
-		} else if hSource.MimeType() == "text" {
-			assert.Equal(t, "text/plain", hResult.MimeType())
-		} else {
-			assert.Equal(t, hSource.MimeType(), hResult.MimeType())
-		}
+		fmt.Println(hSource.MimeType(), hResult.MimeType())
+		assert.EqualValues(t, mimeMap[hSource.MimeType()], mimeMap[hResult.MimeType()])
 	}
 
 	// Helper to find altered in-place filenames
@@ -86,7 +81,7 @@ func TestMimeHandlerMappings(t *testing.T) {
 	}
 
 	// Basic sanity
-	for k, _ := range filtersMap {
+	for k, _ := range mimeMap {
 		fmt.Println("Checking", k)
 		h, err := GetExternalHandlerFromMimeType(k)
 		assert.Nil(t, err)

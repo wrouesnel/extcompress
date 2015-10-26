@@ -189,9 +189,27 @@ func (this *CompressionJob) Result() int {
 	return this.result
 }
 
+// Map mimetypes to stream compressors
+var mimeMap map[string]string = map[string]string {
+	"application/x-bzip2" : "bzip2",
+	"bzip2" : "bzip2",
+
+	"application/gzip" : "gzip",
+	"application/x-gzip" : "gzip",
+	"gzip" : "gzip",
+
+	"application/x-xz" : "xz",
+	"xz" : "xz",
+
+	"text/plain" : "cat",
+	"text" : "cat",
+	"application/x-empty" : "cat",
+	"inode/x-empty" : "cat",
+}
+
 // Map of stream compressors
 var filtersMap map[string]Filter = map[string]Filter{
-	"application/x-bzip2" : Filter{ 
+	"bzip2" : Filter{
 		Command: "bzip2",
 		CompressFlags: []string{"-c"},
 		DecompressFlags: []string{"-d", "-c"},
@@ -202,7 +220,7 @@ var filtersMap map[string]Filter = map[string]Filter{
 		CompressInPlaceFlags: []string{},
 		DecompressInPlaceFlags: []string{"-d"},
 	},
-	"application/gzip" : Filter{ 
+	"gzip" : Filter{
 		Command: "gzip",
 		CompressFlags: []string{"-c"},
 		DecompressFlags: []string{"-d", "-c"},
@@ -213,7 +231,7 @@ var filtersMap map[string]Filter = map[string]Filter{
 		CompressInPlaceFlags: []string{},
 		DecompressInPlaceFlags: []string{"-d"},
 	},
-	"application/x-xz" : Filter{ 
+	"xz" : Filter{
 		Command: "xz",
 		CompressFlags: []string{"-c"},
 		DecompressFlags: []string{"-d", "-c"},
@@ -224,29 +242,7 @@ var filtersMap map[string]Filter = map[string]Filter{
 		CompressInPlaceFlags: []string{},
 		DecompressInPlaceFlags: []string{"-d"},
 	},
-	"text" : Filter{ 
-		Command: "cat",
-		CompressFlags: []string{},
-		DecompressFlags: []string{},
-	
-		CompressStreamFlags: []string{},
-		DecompressStreamFlags: []string{},
-		
-		CompressInPlaceFlags: []string{},
-		DecompressInPlaceFlags: []string{},
-	},
-	"application/x-empty" : Filter{ 
-		Command: "cat",
-		CompressFlags: []string{},
-		DecompressFlags: []string{},
-	
-		CompressStreamFlags: []string{},
-		DecompressStreamFlags: []string{},
-		
-		CompressInPlaceFlags: []string{},
-		DecompressInPlaceFlags: []string{},
-	},
-	"inode/x-empty" : Filter{ 
+	"cat" : Filter{
 		Command: "cat",
 		CompressFlags: []string{},
 		DecompressFlags: []string{},
@@ -298,15 +294,17 @@ func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
 }
 
 func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
-	handler, ok := filtersMap[mimeType]
+	handlername, ok := mimeMap[mimeType]
     if !ok {
     	// Try splitting on the / and looking for a bulk handler
     	firstpart := strings.Split(mimeType, "/")[0]
-    	handler, ok = filtersMap[firstpart]
+    	handlername, ok = mimeMap[firstpart]
     	if !ok {
     		return nil, error(UnknownFileType{mimeType})
     	}
     }
+
+	handler := filtersMap[handlername]
     
     handler.mimeType = mimeType
     extHandler := ExternalHandler(handler)
