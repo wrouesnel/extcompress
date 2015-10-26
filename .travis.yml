@@ -9,3 +9,4 @@ addons:
     - gzip
     - xz-utils
     - bzip2
+    - mime-support
