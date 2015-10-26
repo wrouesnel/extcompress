@@ -304,7 +304,7 @@ func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
     	firstpart := strings.Split(mimeType, "/")[0]
     	handler, ok = filtersMap[firstpart]
     	if !ok {
-    		return nil, error(UnknownFileType{"mimeType"})
+    		return nil, error(UnknownFileType{mimeType})
     	}
     }
     
