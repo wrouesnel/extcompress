@@ -2,7 +2,10 @@ language: go
 go:
 - 1.5.1
 
-sudo: required
+addons:
+  apt:
+    packages:
+    - libmagic-dev
 
 before_install:
 - sudo apt-get update -qq
