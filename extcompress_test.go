@@ -7,6 +7,11 @@ import (
     "os"
     "path"
     "github.com/stretchr/testify/assert"
+	"bytes"
+	"fmt"
+	"strings"
+	"path/filepath"
+	"github.com/prometheus/prometheus/vendor/github.com/Sirupsen/logrus"
 )
 
 const data = `
@@ -14,6 +19,8 @@ this is some non-random data we'll feed to an external compression function.
 `
 
 func setupTestDir(t *testing.T) string {
+	logrus.SetLevel(logrus.DebugLevel)
+
 	tmpdir, err := ioutil.TempDir("", "extcompress_test")
 	assert.Nil(t, err)
 	start := path.Join(tmpdir, "pipechaining")
@@ -50,6 +57,83 @@ func TestPipeChaining(t *testing.T) {
 	// Check job results
 	assert.Zero(t, start_r.Result())
 	assert.Zero(t, mr.Result())
+}
+
+// Test mime handlers
+func TestMimeHandlerMappings(t *testing.T) {
+	tmpdir := setupTestDir(t)
+	//defer os.RemoveAll(tmpdir)
+	fmt.Println(tmpdir)
+
+	// Helper to check mimetype logic
+	mimeCheck := func (hSource ExternalHandler, hResult ExternalHandler) {
+		// empty handling actually results in text
+		if hSource.MimeType() == "inode/x-empty" || hSource.MimeType() == "application/x-empty" {
+			assert.Equal(t, "text/plain", hResult.MimeType())
+		} else if hSource.MimeType() == "text" {
+			assert.Equal(t, "text/plain", hResult.MimeType())
+		} else {
+			assert.Equal(t, hSource.MimeType(), hResult.MimeType())
+		}
+	}
+
+	// Helper to find altered in-place filenames
+	globMatch := func (filename string) string {
+		s, _ := filepath.Glob(fmt.Sprintf("%s*", filename))
+		return s[0]
+	}
+
+	// Basic sanity
+	for k, _ := range filtersMap {
+		fmt.Println("Checking", k)
+		h, err := GetExternalHandlerFromMimeType(k)
+		assert.Nil(t, err)
+		assert.Equal(t, k, h.MimeType())
+
+		filename := path.Join(tmpdir,strings.Replace(k, "/", "_", -1))
+
+		srctext := []byte("this is some text\n")
+		b := bytes.NewBuffer(srctext)
+		r, err := h.CompressStream(b)
+		assert.Nil(t, err)
+		f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(0777))
+		assert.Nil(t, err)
+		io.Copy(f, r)
+		f.Sync()
+		f.Close()
+		assert.Zero(t, r.Result())
+
+		hr, err := GetFileTypeExternalHandler(filename)
+		assert.Nil(t, err)
+		mimeCheck(h, hr)
+
+		// Test streaming decompression
+		dr, err := h.Decompress(filename)
+		assert.Nil(t, err)
+		br, err := ioutil.ReadAll(dr)
+		assert.Nil(t, err)
+		assert.EqualValues(t, srctext, br)
+		assert.Zero(t, dr.Result())
+
+		// Setup for in-place tests
+		err = ioutil.WriteFile(filename, srctext, os.FileMode(0777))
+		assert.Nil(t, err)
+
+		// Test in-place compression
+		err = h.CompressFileInPlace(filename) // Recompress
+		assert.Nil(t, err)
+
+		mutatedFilename := globMatch(filename)
+		fmt.Println("Looking for mutated filename: ", mutatedFilename)
+		h_inplace, _ := GetFileTypeExternalHandler(mutatedFilename) // Should be remutated
+		mimeCheck(h, h_inplace)
+
+		// Test in-place decompression
+		err = h.DecompressFileInPlace(mutatedFilename)
+		assert.Nil(t, err)
+		hfinal, _ := GetFileTypeExternalHandler(filename) // Should now be filename
+		assert.Equal(t, "text/plain", hfinal.MimeType())
+	}
 }
 
 //func TestEarlyPipeClose(t *testing.T) {
