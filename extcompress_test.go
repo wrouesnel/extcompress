@@ -62,8 +62,10 @@ func TestPipeChaining(t *testing.T) {
 // Test mime handlers
 func TestMimeHandlerMappings(t *testing.T) {
 	tmpdir := setupTestDir(t)
-	//defer os.RemoveAll(tmpdir)
+	defer os.RemoveAll(tmpdir)
 	fmt.Println(tmpdir)
+
+	CheckHandlers()
 
 	// Helper to check mimetype logic
 	mimeCheck := func (hSource ExternalHandler, hResult ExternalHandler) {
