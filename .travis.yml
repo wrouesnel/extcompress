@@ -6,7 +6,6 @@ addons:
   apt:
     packages:
     - libmagic-dev
-
-before_install:
-- sudo apt-get update -qq
-- sudo apt-get install -y libmagic-dev
+	- gzip
+	- xz-utils
+	- bzip2
