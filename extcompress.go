@@ -20,6 +20,25 @@ import (
 	//"github.com/davecgh/go-spew/spew"
 )
 
+// Implement a logrus-style writer for use with exec stanzas. Passing in a
+// logrus entry then uses that entry for subsequent output.
+type LogWriter struct {
+	fnLog func(... interface{})
+}
+
+func (lw LogWriter) Write (p []byte) (n int, err error) {
+	lw.fnLog(string(p))
+	return len(p),nil
+}
+
+// Takes a function which will do the actual logging (should be a logrus
+// log level function and returns a log writer which implements io.Writer
+func NewLogWriter(fnLog func(... interface{}) ) *LogWriter {
+	var lw LogWriter
+	lw.fnLog = fnLog
+	return &lw
+}
+
 var (
 	mimeQueryCh chan string
 	mimeResponseCh chan mimeResponse
@@ -44,7 +63,7 @@ type ExternalHandler interface {
 	Decompress(filePath string) (CompressionProcess, error)
 	
 	// Pure stream handlers
-	CompressStream(io.ReadCloser) (CompressionProcess, error)
+	CompressStream(io.Reader) (CompressionProcess, error)
 	DecompressStream(io.ReadCloser) (CompressionProcess, error)
 	
 	// In place compression/decompression
@@ -171,6 +190,7 @@ var filtersMap map[string]Filter = map[string]Filter{
 	"application/x-bzip2" : Filter{ 
 		Command: "bzip2",
 		CompressFlags: []string{"-c"},
+		DecompressFlags: []string{"-d", "-c"},
 
 		CompressStreamFlags: []string{"-c"},
 		DecompressStreamFlags: []string{"-d", "-c"},
@@ -330,7 +350,7 @@ func (c Filter) Compress(filePath string) (CompressionProcess, error) {
 	return newCompressionJob(cmd, rdr), err
 }
 
-func (c Filter) CompressStream(rd io.ReadCloser) (CompressionProcess, error) {
+func (c Filter) CompressStream(rd io.Reader) (CompressionProcess, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
@@ -338,6 +358,7 @@ func (c Filter) CompressStream(rd io.ReadCloser) (CompressionProcess, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 
 	cmd.Stdin = rd
+	cmd.Stderr = NewLogWriter(log.WithField("extcompress", "CompressStream").Debug)
 	
 	rdr, err := cmd.StdoutPipe()
 	if err != nil {
@@ -360,10 +381,13 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 	log.WithFields(logFields).Info("External Compression Command")
 	
 	cmd := exec.Command(c.Command, append(c.CompressInPlaceFlags, filePath)...)
+
+	cmd.Stderr = NewLogWriter(log.WithField("extcompress", "CompressFileInPlace").Debug)
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 	err := cmd.Run()
 	if err != nil {
-		log.WithFields(logFields).Warn("Compression command failed.")
+		log.WithFields(logFields).WithField("error", err.Error()).Warn("Compression command failed.")
 	}
 	
 	return err
@@ -376,7 +400,8 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (CompressionProcess, error) {
 	cmd := exec.Command(c.Command,c.DecompressStreamFlags...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 	cmd.Stdin = rd
-	
+	cmd.Stderr = NewLogWriter(log.WithField("extcompress", "DecompressStream").Debug)
+
 	rdr, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Errorf("Failed to get stdout pipe.")
@@ -397,6 +422,9 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 	log.WithFields(logFields).Info("External Decompression Command")
 	
 	cmd := exec.Command(c.Command, append(c.DecompressInPlaceFlags, filePath)...)
+
+	cmd.Stderr = NewLogWriter(log.WithField("extcompress", "DecompressFileInPlace").Debug)
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 	err := cmd.Run()
 	if err != nil {
@@ -412,6 +440,9 @@ func (c Filter) Decompress(filePath string) (CompressionProcess, error) {
 	log.WithFields(logFields).Info("External Decompression Command")
 	
 	cmd := exec.Command(c.Command, append(c.DecompressFlags, filePath)...)
+
+	cmd.Stderr = NewLogWriter(log.WithField("extcompress", "Decompress").Debug)
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Don't pass on parent signals
 	rdr, err := cmd.StdoutPipe()
 	if err != nil {
