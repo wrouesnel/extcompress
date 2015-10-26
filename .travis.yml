@@ -6,6 +6,6 @@ addons:
   apt:
     packages:
     - libmagic-dev
-	- gzip
-	- xz-utils
-	- bzip2
+    - gzip
+    - xz-utils
+    - bzip2
