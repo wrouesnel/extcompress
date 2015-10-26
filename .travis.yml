@@ -10,3 +10,4 @@ addons:
     - xz-utils
     - bzip2
     - mime-support
+    - shared-mime-info
