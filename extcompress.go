@@ -13,16 +13,29 @@ import (
 	"os/exec"
 	"io"
 	"strings"
-	//"github.com/rakyll/magicmime"
-	"mime"
+	"github.com/rakyll/magicmime"
 	"sync"
 	
 	log "github.com/Sirupsen/logrus"
 	//"github.com/davecgh/go-spew/spew"
-	"path/filepath"
 )
 
-var gmtx sync.Mutex
+var (
+	mimeQueryCh chan string
+	mimeResponseCh chan mimeResponse
+)
+
+type mimeResponse struct {
+	mimetype string
+	err error
+}
+
+func init() {
+	// Start the magic mime worker
+	mimeQueryCh = make(chan string,0)
+	mimeResponseCh = make(chan mimeResponse,0)
+	go magicMimeWorker()
+}
 
 // Interface of an external handler type for dealing with library compression
 type ExternalHandler interface {
@@ -233,26 +246,31 @@ func CheckHandlers() {
 	}
 }
 
+// Go-routine which serves magicmime requests because libmagic is not thread
+// safe.
+func magicMimeWorker() {
+	err:= magicmime.Open(magicmime.MAGIC_MIME_TYPE |
+		magicmime.MAGIC_SYMLINK | magicmime.MAGIC_ERROR)
+	if err != nil {
+		log.Fatalln("libmagic initialization failure", err.Error())
+	}
+	defer magicmime.Close()
+
+	// Listen
+	for filePath := range mimeQueryCh {
+		mimetype, err := magicmime.TypeByFile(filePath)
+		mimeResponseCh <- mimeResponse{mimetype, err}
+	}
+}
+
 // Do a filemagic lookup and return a handler interface for the given type
 func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
-    // libmagic is not thread safe!
-    gmtx.Lock()
-    defer gmtx.Unlock()
-
-//	err:= magicmime.Open(magicmime.MAGIC_MIME_TYPE |
-//		magicmime.MAGIC_SYMLINK | magicmime.MAGIC_ERROR)
-//    if err != nil {
-//        return nil, err
-//    }
-//	defer magicmime.Close()
-//
-//    mimetype, err := magicmime.TypeByFile(filePath)
-//    if err != nil {
-//        return nil, err
-//    }
-	mimetype := mime.TypeByExtension(filepath.Ext(filePath))
-    
-    return GetExternalHandlerFromMimeType(mimetype)
+    mimeQueryCh <- filePath
+	r := <- mimeResponseCh
+	if r.err != nil {
+		return nil, r.err
+	}
+    return GetExternalHandlerFromMimeType(r.mimetype)
 }
 
 func GetExternalHandlerFromMimeType(mimeType string) (ExternalHandler, error) {
