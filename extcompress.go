@@ -13,10 +13,13 @@ import (
 	"os/exec"
 	"io"
 	"strings"
-	"github.com/rakyll/magicmime"
+	//"github.com/rakyll/magicmime"
+	"mime"
 	"sync"
 	
 	log "github.com/Sirupsen/logrus"
+	//"github.com/davecgh/go-spew/spew"
+	"path/filepath"
 )
 
 var gmtx sync.Mutex
@@ -24,12 +27,12 @@ var gmtx sync.Mutex
 // Interface of an external handler type for dealing with library compression
 type ExternalHandler interface {
 	// Stream compression/decompression from file
-	Compress(filePath string) (io.ReadCloser, error)
-	Decompress(filePath string) (io.ReadCloser, error)
+	Compress(filePath string) (CompressionProcess, error)
+	Decompress(filePath string) (CompressionProcess, error)
 	
 	// Pure stream handlers
-	CompressStream(io.ReadCloser) (io.ReadCloser, error)
-	DecompressStream(io.ReadCloser) (io.ReadCloser, error)
+	CompressStream(io.ReadCloser) (CompressionProcess, error)
+	DecompressStream(io.ReadCloser) (CompressionProcess, error)
 	
 	// In place compression/decompression
 	CompressFileInPlace(filePath string) error
@@ -58,35 +61,96 @@ type Filter struct {
 	mimeType string
 }
 
-// Implements the ReadCloser interface to allow safely shutting down remotely
-// invoked Command pipes.
-type ReadWaitCloser struct {
-	cmd *exec.Cmd
-	pipe io.ReadCloser
+// Represents a spawned external compression process. Consists of a ReadCloser
+// interfaced with an additional result field for retreiving the status code
+// of the job.
+type CompressionProcess interface {
+	Result() int	// Get the result of the compressor. This function will block until the result is availble.
+
+	Read(p []byte) (n int, err error)
+	Close() error
 }
 
-func (rwc ReadWaitCloser) Read(p []byte) (n int, err error) {
+// Implements the ReadCloser interface to allow safely shutting down remotely
+// invoked Command pipes.
+type CompressionJob struct {
+	cmd *exec.Cmd
+	pipe io.ReadCloser
+	result int
+
+	// Used to make Result
+	wg sync.WaitGroup
+}
+
+// Creates a new compression job and initializes the wait group
+func newCompressionJob(cmd *exec.Cmd, pipe io.ReadCloser) *CompressionJob {
+	job := CompressionJob{}
+	job.cmd = cmd
+	job.pipe = pipe
+	job.wg.Add(1)
+
+	return &job
+}
+
+func (rwc CompressionJob) Read(p []byte) (n int, err error) {
 	return rwc.pipe.Read(p)
 }
 
-func (rwc ReadWaitCloser) Close() error {
-	// Close requested, so ask the process to die, then close it's pipe.
-	err := rwc.cmd.Process.Signal(syscall.SIGTERM)
-	if err != nil {
-		log.WithField("error", err.Error()).Error("Error sending signal to external process")
+func (this *CompressionJob) Close() error {
+	// If process not existed, request kill
+	if this.cmd.ProcessState != nil {
+		// Close requested, so ask the process to die, then close it's pipe.
+		err := this.cmd.Process.Signal(syscall.SIGINT)
+		if err != nil {
+			log.WithField("error", err.Error()).Error("Error sending signal to external process")
+		}
+
+//		// If the int isn't respected after a few seconds, do a term.
+//		t := time.NewTimer(time.Second * 3)
+//		<- t.C
+//
+//		if !this.cmd.ProcessState.Exited() {
+//			log.Warn("Compression command didn't die after 3 seconds. Terminating...")
+//			err := this.cmd.Process.Signal(syscall.SIGTERM)
+//			if err != nil {
+//				log.WithField("error", err.Error()).Error("Error sending signal to external process")
+//			}
+//		}
 	}
 
-	err = rwc.cmd.Wait()
-	if err != nil {
-		log.WithField("error", err.Error()).Error("External compression command exited non-zero.")
-		rwc.pipe.Close()
-		return err
-	} else {
-		log.Debug("External compression finished successfully.")
-	} 
-	
-	err = rwc.pipe.Close()
+	return this.getResult()
+}
+
+func (this *CompressionJob) getResult() error {
+	if err := this.cmd.Wait(); err != nil {
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			// The program has exited with an exit code != 0
+
+			// This works on both Unix and Windows. Although package
+			// syscall is generally platform dependent, WaitStatus is
+			// defined for both Unix and Windows and in both cases has
+			// an ExitStatus() method with the same signature.
+			if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+				this.result = status.ExitStatus()
+			}
+		} else {
+			log.Fatalf("cmd.Wait: %v", err)
+		}
+	}
+	err := this.pipe.Close()
+	this.wg.Done()	// Clear the waiting for results
 	return err
+}
+
+// Returns the exit status of the compression command. Blocks until the compression
+// command is actually terminated.
+func (this *CompressionJob) Result() int {
+	if this.cmd.ProcessState == nil {
+		this.getResult()
+	}
+
+	this.wg.Wait()	// Wait for command to exit
+	return this.result
 }
 
 // Map of stream compressors
@@ -94,8 +158,7 @@ var filtersMap map[string]Filter = map[string]Filter{
 	"application/x-bzip2" : Filter{ 
 		Command: "bzip2",
 		CompressFlags: []string{"-c"},
-		DecompressFlags: []string{"-d", "-c"},
-	
+
 		CompressStreamFlags: []string{"-c"},
 		DecompressStreamFlags: []string{"-d", "-c"},
 		
@@ -176,17 +239,18 @@ func GetFileTypeExternalHandler(filePath string) (ExternalHandler, error) {
     gmtx.Lock()
     defer gmtx.Unlock()
 
-	err:= magicmime.Open(magicmime.MAGIC_MIME_TYPE |
-		magicmime.MAGIC_SYMLINK | magicmime.MAGIC_ERROR)
-    if err != nil {
-        return nil, err
-    }
-	defer magicmime.Close()
-
-    mimetype, err := magicmime.TypeByFile(filePath)
-    if err != nil {
-        return nil, err
-    }
+//	err:= magicmime.Open(magicmime.MAGIC_MIME_TYPE |
+//		magicmime.MAGIC_SYMLINK | magicmime.MAGIC_ERROR)
+//    if err != nil {
+//        return nil, err
+//    }
+//	defer magicmime.Close()
+//
+//    mimetype, err := magicmime.TypeByFile(filePath)
+//    if err != nil {
+//        return nil, err
+//    }
+	mimetype := mime.TypeByExtension(filepath.Ext(filePath))
     
     return GetExternalHandlerFromMimeType(mimetype)
 }
@@ -226,7 +290,7 @@ func (c Filter) CommandStreamDecompress() string {
 	return strings.Join(append([]string{c.Command}, c.DecompressStreamFlags...), " ")
 }
 
-func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
+func (c Filter) Compress(filePath string) (CompressionProcess, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Compression Command")
 	
@@ -244,11 +308,11 @@ func (c Filter) Compress(filePath string) (io.ReadCloser, error) {
 		log.WithFields(logFields).Error("Compression command failed.")
 		return nil, err
 	}
-	
-	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
+
+	return newCompressionJob(cmd, rdr), err
 }
 
-func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
+func (c Filter) CompressStream(rd io.ReadCloser) (CompressionProcess, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
@@ -268,8 +332,8 @@ func (c Filter) CompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 		log.WithFields(logFields).Error("Compression command failed.")
 		return nil, err
 	}
-	
-	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
+
+	return newCompressionJob(cmd, rdr), err
 }
 
 // Call the compression utility in standalone compression mode
@@ -287,7 +351,7 @@ func (c Filter) CompressFileInPlace(filePath string) error {
 	return err
 }
 
-func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
+func (c Filter) DecompressStream(rd io.ReadCloser) (CompressionProcess, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command }
 	log.WithFields(logFields).Info("External Compression Command")
 	
@@ -306,8 +370,8 @@ func (c Filter) DecompressStream(rd io.ReadCloser) (io.ReadCloser, error) {
 		log.WithFields(logFields).Error("Compression command failed.")
 		return nil, err
 	}
-	
-	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
+
+	return newCompressionJob(cmd, rdr), err
 }
 
 func (c Filter) DecompressFileInPlace(filePath string) error {	
@@ -325,7 +389,7 @@ func (c Filter) DecompressFileInPlace(filePath string) error {
 }
 
 // Decompress the given file and return the stream
-func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
+func (c Filter) Decompress(filePath string) (CompressionProcess, error) {
 	var logFields = log.Fields{"compressCmd" : c.Command, "filepath" : filePath }
 	log.WithFields(logFields).Info("External Decompression Command")
 	
@@ -342,5 +406,5 @@ func (c Filter) Decompress(filePath string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	
-	return io.ReadCloser(ReadWaitCloser{cmd, rdr}), err
+	return newCompressionJob(cmd, rdr), err
 }
