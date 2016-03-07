@@ -18,7 +18,95 @@ import (
 	
 	log "github.com/Sirupsen/logrus"
 	//"github.com/davecgh/go-spew/spew"
+	"os"
+	"bytes"
 )
+
+// LZO isn't reliably recognized by mimemagic, so we need to define this
+// here. We should probably move to encoding the other compressors as well.
+var magics map[string][]byte = map[string][]byte{
+	"lzop": []byte{0x89, 0x4c, 0x5a, 0x4f, 0x00, 0x0d, 0x0a, 0x1a, 0x0a},
+}
+
+// Map mimetypes to stream compressors
+var mimeMap map[string]string = map[string]string {
+	"application/x-bzip2" : "bzip2",
+	"bzip2" : "bzip2",
+
+	"application/gzip" : "gzip",
+	"application/x-gzip" : "gzip",
+	"gzip" : "gzip",
+
+	"application/x-xz" : "xz",
+	"xz" : "xz",
+
+	"application/x-lzop" : "lzop",
+	"lzop" : "lzop",
+
+	"text/plain" : "cat",
+	"text" : "cat",
+	"application/x-empty" : "cat",
+	"inode/x-empty" : "cat",
+}
+
+// Map of stream compressors
+var filtersMap map[string]Filter = map[string]Filter{
+	"bzip2" : Filter{
+		Command: "bzip2",
+		CompressFlags: []string{"-c"},
+		DecompressFlags: []string{"-d", "-c"},
+
+		CompressStreamFlags: []string{"-c"},
+		DecompressStreamFlags: []string{"-d", "-c"},
+
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{"-d"},
+	},
+	"gzip" : Filter{
+		Command: "gzip",
+		CompressFlags: []string{"-c"},
+		DecompressFlags: []string{"-d", "-c"},
+
+		CompressStreamFlags: []string{"-c"},
+		DecompressStreamFlags: []string{"-d", "-c"},
+
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{"-d"},
+	},
+	"xz" : Filter{
+		Command: "xz",
+		CompressFlags: []string{"-c"},
+		DecompressFlags: []string{"-d", "-c"},
+
+		CompressStreamFlags: []string{"-c"},
+		DecompressStreamFlags: []string{"-d", "-c"},
+
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{"-d"},
+	},
+	"lzop" : Filter{
+		Command: "lzop",
+		CompressFlags: []string{"-c"},
+		DecompressFlags: []string{"-d", "-c"},
+
+		CompressStreamFlags: []string{"-c"},
+		DecompressStreamFlags: []string{"-d", "-c"},
+
+		CompressInPlaceFlags: []string{"-U"},
+		DecompressInPlaceFlags: []string{"-U", "-d"},
+	},
+	"cat" : Filter{
+		Command: "cat",
+		CompressFlags: []string{},
+		DecompressFlags: []string{},
+
+		CompressStreamFlags: []string{},
+		DecompressStreamFlags: []string{},
+
+		CompressInPlaceFlags: []string{},
+		DecompressInPlaceFlags: []string{},
+	},
+}
 
 // Implement a logrus-style writer for use with exec stanzas. Passing in a
 // logrus entry then uses that entry for subsequent output.
@@ -189,72 +277,6 @@ func (this *CompressionJob) Result() int {
 	return this.result
 }
 
-// Map mimetypes to stream compressors
-var mimeMap map[string]string = map[string]string {
-	"application/x-bzip2" : "bzip2",
-	"bzip2" : "bzip2",
-
-	"application/gzip" : "gzip",
-	"application/x-gzip" : "gzip",
-	"gzip" : "gzip",
-
-	"application/x-xz" : "xz",
-	"xz" : "xz",
-
-	"text/plain" : "cat",
-	"text" : "cat",
-	"application/x-empty" : "cat",
-	"inode/x-empty" : "cat",
-}
-
-// Map of stream compressors
-var filtersMap map[string]Filter = map[string]Filter{
-	"bzip2" : Filter{
-		Command: "bzip2",
-		CompressFlags: []string{"-c"},
-		DecompressFlags: []string{"-d", "-c"},
-
-		CompressStreamFlags: []string{"-c"},
-		DecompressStreamFlags: []string{"-d", "-c"},
-		
-		CompressInPlaceFlags: []string{},
-		DecompressInPlaceFlags: []string{"-d"},
-	},
-	"gzip" : Filter{
-		Command: "gzip",
-		CompressFlags: []string{"-c"},
-		DecompressFlags: []string{"-d", "-c"},
-	
-		CompressStreamFlags: []string{"-c"},
-		DecompressStreamFlags: []string{"-d", "-c"},
-		
-		CompressInPlaceFlags: []string{},
-		DecompressInPlaceFlags: []string{"-d"},
-	},
-	"xz" : Filter{
-		Command: "xz",
-		CompressFlags: []string{"-c"},
-		DecompressFlags: []string{"-d", "-c"},
-	
-		CompressStreamFlags: []string{"-c"},
-		DecompressStreamFlags: []string{"-d", "-c"},
-		
-		CompressInPlaceFlags: []string{},
-		DecompressInPlaceFlags: []string{"-d"},
-	},
-	"cat" : Filter{
-		Command: "cat",
-		CompressFlags: []string{},
-		DecompressFlags: []string{},
-	
-		CompressStreamFlags: []string{},
-		DecompressStreamFlags: []string{},
-		
-		CompressInPlaceFlags: []string{},
-		DecompressInPlaceFlags: []string{},
-	},
-}
-
 // Check that all handlers are properly registered, fail hard if they're not.
 func CheckHandlers() {
 	for k, v := range filtersMap {
@@ -278,8 +300,36 @@ func magicMimeWorker() {
 
 	// Listen
 	for filePath := range mimeQueryCh {
-		mimetype, err := magicmime.TypeByFile(filePath)
-		mimeResponseCh <- mimeResponse{mimetype, err}
+		// Grab all input files and test against the internal magic database
+		// first
+		wasFound := func() bool {
+			f, err := os.Open(filePath)
+			defer f.Close()
+			if err == nil {
+				for name, magic := range magics {
+					var err error
+					numBytes := len(magic)
+
+					filemagic := make([]byte, numBytes)
+					_, err = f.Read(filemagic)
+					if err != nil {
+						// Couldn't read, let magicmime try?
+						mimeResponseCh <- mimeResponse{"", err}
+						return true
+					}
+					// Compare bytes
+					if bytes.Equal(filemagic, magic) {
+						mimeResponseCh <- mimeResponse{mimeMap[name], nil}
+						return true
+					}
+				}
+			}
+			return false
+		}()
+		if !wasFound {
+			mimetype, err := magicmime.TypeByFile(filePath)
+			mimeResponseCh <- mimeResponse{mimetype, err}
+		}
 	}
 }
 
