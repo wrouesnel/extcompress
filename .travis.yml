@@ -1,6 +1,6 @@
 language: go
 go:
-- 1.5.1
+- 1.6
 
 addons:
   apt:
@@ -9,5 +9,6 @@ addons:
     - gzip
     - xz-utils
     - bzip2
+    - lzop
     - mime-support
     - shared-mime-info
